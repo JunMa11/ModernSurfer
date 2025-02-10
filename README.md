@@ -1,2 +1,2 @@
-# ModernSurfer
-Fast segmentation pipeline for brain MRI
+# FastUNet
+Fast implementation for nnU-Net

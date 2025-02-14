@@ -41,6 +41,7 @@ Note:
 
 ```bash
 conda create -n nnunet python=3.10
+conda activate nnunet
 cd nnUNet
 pip install -e .
 python -m pip install torch torch-tensorrt tensorrt --extra-index-url https://download.pytorch.org/whl/cu124

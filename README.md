@@ -34,11 +34,12 @@ For example
 python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weight/nnUNetTrainerDA5__nnUNetPlans__3d_lowres/
 ```
 
-## Accelerating nnUNet-fp16 using TensorRT. Check the log.txt for the inference time.
+## Accelerating nnUNet-fp16 using TensorRT. 
 Note:
 1. Line 17 makes the nnUNet use BatchNorm3D.
 2. Line 121 in nnunet_infer_nii_trt_compile.py, "network.load_state_dict(parameters[0])" is disabled since I changed the InstanceNorm into BatchNorm and did not load the pre-trained model. 
 
+### Check the log.txt for the inference time.
 ```bash
 conda create -n nnunet python=3.10
 conda activate nnunet

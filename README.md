@@ -57,4 +57,7 @@ FYI My Version:
 torch.__version__ '2.6.0+cu124'
 torch_tensorrt.__version__ '2.6.0+cu124'
 ```
-
+Install Cupy for preprocess function
+```bash
+pip install cupy-cuda12x
+```

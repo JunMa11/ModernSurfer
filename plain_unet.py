@@ -13,9 +13,7 @@ from torch import nn
 from torch.nn.modules.conv import _ConvNd
 from torch.nn.modules.dropout import _DropoutNd
 
-setting = {'input_channels': 1, 'segmentation_heads': 9, 'arch_init_args': {'n_stages': 6, 'features_per_stage': [32, 64, 128, 256, 320, 320], 'conv_op': torch.nn.modules.conv.Conv3d, 'kernel_sizes': [[3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]], 'strides': [[1, 1, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [1, 2, 2]], 'n_conv_per_stage': [2, 2, 2, 2, 2, 2], 'n_conv_per_stage_decoder': [2, 2, 2, 2, 2], 'conv_bias': True, 'norm_op': nn.InstanceNorm3d, 'norm_op_kwargs': {'eps': 1e-05, 'affine': True}, 'dropout_op': None, 'dropout_op_kwargs': None, 'nonlin': torch.nn.LeakyReLU, 'nonlin_kwargs': {'inplace': True}}, 'arch_init_args_req_import': ['conv_op', 'norm_op', 'dropout_op', 'nonlin']}
-setting['arch_init_args']['norm_op'] = nn.BatchNorm3d
-# setting['arch_init_args_req_import'] = ['conv_op', 'dropout_op', 'nonlin']
+setting = {'input_channels': 1, 'segmentation_heads': 9, 'arch_init_args': {'n_stages': 6, 'features_per_stage': [32, 64, 128, 256, 320, 320], 'conv_op': torch.nn.modules.conv.Conv3d, 'kernel_sizes': [[3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]], 'strides': [[1, 1, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [1, 2, 2]], 'n_conv_per_stage': [2, 2, 2, 2, 2, 2], 'n_conv_per_stage_decoder': [2, 2, 2, 2, 2], 'conv_bias': True, 'norm_op': torch.nn.modules.instancenorm.InstanceNorm3d, 'norm_op_kwargs': {'eps': 1e-05, 'affine': True}, 'dropout_op': None, 'dropout_op_kwargs': None, 'nonlin': torch.nn.LeakyReLU, 'nonlin_kwargs': {'inplace': True}}, 'arch_init_args_req_import': ['conv_op', 'norm_op', 'dropout_op', 'nonlin']}
 
 class PlainConvUNet(nn.Module):
     def __init__(self,
@@ -53,7 +51,6 @@ class PlainConvUNet(nn.Module):
                                                                 f"as we have resolution stages. here: {n_stages} " \
                                                                 f"stages, so it should have {n_stages - 1} entries. " \
                                                                 f"n_conv_per_stage_decoder: {n_conv_per_stage_decoder}"
-        self.input_channels = input_channels
         self.encoder = PlainConvEncoder(input_channels, n_stages, features_per_stage, conv_op, kernel_sizes, strides,
                                         n_conv_per_stage, conv_bias, norm_op, norm_op_kwargs, dropout_op,
                                         dropout_op_kwargs, nonlin, nonlin_kwargs, return_skips=True,

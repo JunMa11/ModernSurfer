@@ -9,15 +9,32 @@ Here we create a clean inference pipeline that only contains the necessary modul
 
 ## Installation
 
+# Environment Setup
+
+To ensure compatibility, use the following versions:
+
+- **Python**: 3.10  
+- **CUDA**: 12.4 
+
 To install the nnUNet Inference module, you need to have latest pytorch installed on your system. Follow the steps below:
 
-1. Install the packages:
+1. create env and clone the repo
+```bash
+conda create -n fast_unet python==3.10
+conda activate fast_unet
+git clone https://github.com/JunMa11/FastUNet.git
+```
+
+2. Install the packages:
 ```bash
 cd nnUNet
 pip install -e .
 pip install cupy-cuda12x
 ```
+## Download dataset and model weights from the following link
+https://drive.google.com/drive/folders/1WRu2v3Mr67mkf1lB_ZPyvRztvGu-htL8?usp=sharing
 
+put the dataset in FastUnet/nnUNet_data and model weights folders in FastUnet/model_weights
 
 ## Running Inference
 
@@ -34,8 +51,8 @@ For example
 ```bash
 python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weight/nnUNetTrainerDA5__nnUNetPlans__3d_lowres/
 ```
-## Download dataset and model weights from the following link
-https://drive.google.com/drive/folders/1WRu2v3Mr67mkf1lB_ZPyvRztvGu-htL8?usp=sharing
+
+
 
 ## Accelerating nnUNet-fp16 using TensorRT. 
 Note:

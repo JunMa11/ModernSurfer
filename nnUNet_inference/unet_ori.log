@@ -1,0 +1,54 @@
+
+#######################################################################
+Please cite the following paper when using nnU-Net:
+Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. Nature methods, 18(2), 203-211.
+#######################################################################
+
+There are 5 cases in the source folder
+I am process 0 out of 1 (max process ID is 0, we start counting with 0!)
+There are 5 cases that I would like to predict
+
+Predicting FLARETs_0001:
+perform_everything_on_device: True
+predict time: 7.3966968059539795
+sending off prediction to background worker for resampling and export
+done with FLARETs_0001
+
+Predicting FLARETs_0015:
+perform_everything_on_device: True
+predict time: 3.44307804107666
+sending off prediction to background worker for resampling and export
+done with FLARETs_0015
+
+Predicting FLARETs_0018:
+perform_everything_on_device: True
+crop time: 0.9434242248535156
+normalize time: 0.11918377876281738
+resample time: 10.127751588821411
+crop time: 1.1911048889160156
+normalize time: 0.14662766456604004
+resample time: 10.147395133972168
+crop time: 0.47043704986572266
+normalize time: 0.06256246566772461
+resample time: 5.768980264663696
+crop time: 0.24396038055419922
+normalize time: 0.03263044357299805
+resample time: 1.437133550643921
+crop time: 0.6930949687957764
+normalize time: 0.09096789360046387
+resample time: 6.024612903594971
+predict time: 3.9689478874206543
+sending off prediction to background worker for resampling and export
+done with FLARETs_0018
+
+Predicting FLARETs_0036:
+perform_everything_on_device: True
+predict time: 1.7782797813415527
+sending off prediction to background worker for resampling and export
+done with FLARETs_0036
+
+Predicting FLARETs_0046:
+perform_everything_on_device: True
+predict time: 1.856863021850586
+sending off prediction to background worker for resampling and export
+done with FLARETs_0046

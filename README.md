@@ -11,10 +11,11 @@ Here we create a clean inference pipeline that only contains the necessary modul
 
 To install the nnUNet Inference module, you need to have latest pytorch installed on your system. Follow the steps below:
 
-1. Clone the repository:
+1. Install the packages:
 ```bash
 cd nnUNet
 pip install -e .
+pip install cupy-cuda12x
 ```
 
 
@@ -25,7 +26,7 @@ To run inference using a trained nnUNet model, follow these steps:
 1. Use the following command to perform inference:
 
 ```bash
-python nnunet_infer_nii.py -i <path_to_sample_data> -o <path_to_predictions> --model_path <path_to_model_weight/nnUNetTrainerDA5__nnUNetPlans__3d_lowres>
+python nnunet_infer_nii.py -i <path_to_sample_data> -o <path_to_predictions> --model_path <path_to_model_weight>
 ```
 
 For example
@@ -33,6 +34,8 @@ For example
 ```bash
 python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weight/nnUNetTrainerDA5__nnUNetPlans__3d_lowres/
 ```
+## Download dataset and model weights from the following link
+https://drive.google.com/drive/folders/1WRu2v3Mr67mkf1lB_ZPyvRztvGu-htL8?usp=sharing
 
 ## Accelerating nnUNet-fp16 using TensorRT. 
 Note:
@@ -57,7 +60,4 @@ FYI My Version:
 torch.__version__ '2.6.0+cu124'
 torch_tensorrt.__version__ '2.6.0+cu124'
 ```
-Install Cupy for preprocess function
-```bash
-pip install cupy-cuda12x
-```
+

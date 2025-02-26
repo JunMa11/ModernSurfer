@@ -50,7 +50,23 @@ python nnunet_infer_nii.py -i <path_to_sample_data> -o <path_to_predictions> --m
 For example
 
 ```bash
-python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weight/nnUNetTrainerDA5__nnUNetPlans__3d_lowres/
+python nnunet_infer_nii.py -i /home/ys155/nnUNet_inference/sample_data/ -o ./seg --model_path /home/ys155/fastUNet/model_weights/701/nnUNetTrainerMICCAI_repvgg__nnUNetPlans__3d_fullres
 ```
 
 
+## (Optional) Running Inference with TensorRT.
+
+Note: Current version of TensorRT will slow down the inference speed. InstanceNorm in TensorRT might be a problem.
+
+Install the packages:
+
+```bash
+python -m pip install torch torch-tensorrt tensorrt --extra-index-url https://download.pytorch.org/whl/cu124
+pip install "nvidia-modelopt[all]" -U --extra-index-url https://pypi.nvidia.com
+cd ..
+```
+
+Inference with TensorRT:
+```bash
+python nnunet_infer_nii.py -i /home/ys155/nnUNet_inference/sample_data/ -o ./seg --model_path /home/ys155/fastUNet/model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --trt
+```

@@ -24,6 +24,9 @@ import argparse
 import glob
 import os
 
+import torch_tensorrt as torchtrt
+from modelopt.torch.quantization.utils import export_torch_mode
+
 
 def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits: Union[torch.Tensor, np.ndarray],
                                                                 plans_manager: PlansManager,
@@ -216,7 +219,6 @@ class SimplePredictor(nnUNetPredictor):
             for sl in tqdm(slicers, disable=not self.allow_tqdm):
                 workon = data[sl][None]
                 workon = workon.to(self.device)
-
                 prediction = self._internal_maybe_mirror_and_predict(workon)[0].to(results_device)
                 if self.use_gaussian:
                     prediction *= gaussian
@@ -282,6 +284,8 @@ if __name__ == "__main__":
         parser.add_argument('--fold', type=str, default='all', help='Fold number to use for inference (default: 0)')
         parser.add_argument('--checkpoint', type=str, default='checkpoint_final.pth', help='Path to the model checkpoint file')
         parser.add_argument('--use_softmax', default=True, help='Apply softmax to the output probabilities')
+        parser.add_argument('--trt', action='store_true', help='Using TensorRT')
+
         return parser.parse_args()
 
     args = parse_arguments()
@@ -306,14 +310,44 @@ if __name__ == "__main__":
     output_folder = args.output_path
     os.makedirs(output_folder, exist_ok=True)
     files = glob.glob(os.path.join(input_folder, '*'))
-    for file in tqdm(files):
-        image, props = SimpleITKIO().read_images([file])
-        t0 = time()
-        seg = predictor.inference(image, props, args.use_softmax)
-        print(f'total: {time() - t0}')
-        sitk_img = sitk.GetImageFromArray(seg)
-        case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
-        sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
+
+    if args.trt:
+        # it becomes slow in this version
+        model = predictor.network
+        model.cuda()
+        model.eval()
+        input_shape = (1, 1, 64, 256, 256)
+        with torch.no_grad():
+            with export_torch_mode():
+                input_tensor = torch.randn(input_shape).to("cuda")
+                from torch.export._trace import _export
+
+                exp_program = _export(model, (input_tensor,))
+                enabled_precisions = {torch.half}
+                trt_model = torchtrt.dynamo.compile(
+                    exp_program,
+                    inputs=[input_tensor],
+                    enabled_precisions=enabled_precisions,
+                    min_block_size=1,
+                )
+                predictor.network = trt_model
+            for file in tqdm(files):
+                image, props = SimpleITKIO().read_images([file])
+                t0 = time()
+                seg = predictor.inference(image, props, args.use_softmax)
+                print(f'total: {time() - t0}')
+                sitk_img = sitk.GetImageFromArray(seg)
+                case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
+                sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
+    else:
+        for file in tqdm(files):
+            image, props = SimpleITKIO().read_images([file])
+            t0 = time()
+            seg = predictor.inference(image, props, args.use_softmax)
+            print(f'total: {time() - t0}')
+            sitk_img = sitk.GetImageFromArray(seg)
+            case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
+            sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
 
 
 

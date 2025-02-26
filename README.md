@@ -63,10 +63,9 @@ Install the packages:
 ```bash
 python -m pip install torch torch-tensorrt tensorrt --extra-index-url https://download.pytorch.org/whl/cu124
 pip install "nvidia-modelopt[all]" -U --extra-index-url https://pypi.nvidia.com
-cd ..
 ```
 
 Inference with TensorRT:
 ```bash
-python nnunet_infer_nii.py -i /home/ys155/nnUNet_inference/sample_data/ -o ./seg --model_path /home/ys155/fastUNet/model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --trt
+python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --trt
 ```

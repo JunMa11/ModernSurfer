@@ -391,6 +391,9 @@ if __name__ == "__main__":
                 seg = predictor.inference(image, props, args.use_softmax)
                 print(f'total: {time() - t0}')
                 sitk_img = sitk.GetImageFromArray(seg)
+                sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
+                sitk_img.SetOrigin(props['sitk_stuff']['origin'])
+                sitk_img.SetDirection(props['sitk_stuff']['direction'])
                 case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
                 sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
     else:
@@ -400,6 +403,9 @@ if __name__ == "__main__":
             seg = predictor.inference(image, props, args.use_softmax)
             print(f'total: {time() - t0}')
             sitk_img = sitk.GetImageFromArray(seg)
+            sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
+            sitk_img.SetOrigin(props['sitk_stuff']['origin'])
+            sitk_img.SetDirection(props['sitk_stuff']['direction'])
             case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
             sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
 

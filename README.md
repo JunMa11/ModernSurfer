@@ -69,3 +69,30 @@ Inference with TensorRT:
 ```bash
 python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --trt
 ```
+
+## (Optional) Running Inference with Onnx TensorRT.
+```bash
+pip install onnx
+pip install onnxscript
+pip install timm optimum
+
+Download TensorRT:
+https://developer.nvidia.com/tensorrt/download/10x
+Install TensorRT:
+https://docs.nvidia.com/deeplearning/tensorrt/latest/installing-tensorrt/installing.html#
+
+install cudnn9
+sudo apt-get -y install cudnn9-cuda-12
+
+add 
+
+quantizable_op_types = [op for op in quantizable_op_types if op != "ConvTranspose"]
+in line 150 in /Users/yangsui/Documents/Research/FastUNet/TensorRT-Model-Optimizer/modelopt/onnx/quantization/int8.py,
+to not to quantize ConvTranspose. Otherwise, Error: assert not np_y_scale.shape or w32.shape[-1] == np_y_scale.shape[0].
+```
+Run:
+```bash
+python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt
+```
+
+But python run_engien_unsuccessful.py cannot be run. Need to check.

@@ -285,6 +285,7 @@ if __name__ == "__main__":
         parser.add_argument('--checkpoint', type=str, default='checkpoint_final.pth', help='Path to the model checkpoint file')
         parser.add_argument('--use_softmax', default=True, help='Apply softmax to the output probabilities')
         parser.add_argument('--trt', action='store_true', help='Using TensorRT')
+        parser.add_argument('--onnx_trt', action='store_true', help='Using TensorRT')
 
         return parser.parse_args()
 
@@ -310,6 +311,59 @@ if __name__ == "__main__":
     output_folder = args.output_path
     os.makedirs(output_folder, exist_ok=True)
     files = glob.glob(os.path.join(input_folder, '*'))
+
+    if args.onnx_trt:
+        model = predictor.network
+        model.cuda()
+        model.eval()
+        input_shape = (1, 1, 64, 256, 256)
+        # prediction.shape (14, 64, 256, 256)
+        input_tensor = torch.randn(input_shape).to("cuda")
+
+        onnx_program = torch.onnx.dynamo_export(model, input_tensor)
+        if "onnx_models" not in os.listdir():
+            os.makedirs("onnx_models")
+        onnx_program.save("onnx_models/fast_unet.onnx")
+
+        import numpy as np
+
+        # Example numpy file for single-input ONNX
+        calib_data = np.random.randn(1, 1, 64, 256, 256)
+
+        calib_data = calib_data.astype(np.float32)
+        np.save("calib_data.npy", calib_data)
+
+        # Example numpy file for single/multi-input ONNX
+        # Dict key should match the input names of ONNX
+        # calib_data = {
+        #     "input_name": np.random.randn(*shape),
+        #     "input_name2": np.random.randn(*shape2),
+        # }
+        # np.savez("/workspace/calib_data.npz", calib_data)
+
+        import sys
+
+        sys.path.insert(0, './TensorRT-Model-Optimizer')
+
+        import modelopt.onnx.quantization as moq
+        import numpy as np
+
+        calibration_data_path = 'calib_data.npy'
+        # onnx_path = "vit_base_patch16_224.onnx"
+        #
+        calibration_data = np.load(calibration_data_path)
+
+        moq.quantize(
+            onnx_path="onnx_models/fast_unet.onnx",
+            calibration_data=calibration_data,
+            output_path="onnx_models/quant_fast_unet.onnx",
+            quantize_mode="int8",
+            # high_precision_dtype="float16",
+        )
+
+        # ! / usr / src / tensorrt / bin / trtexec - -onnx = onnx_models / quant_fast_unet.onnx - -saveEngine = onnx_models / quant_fast_unet.engine - -best
+        # ! / usr / src / tensorrt / bin / trtexec - -onnx = onnx_models / quant_fast_unet.onnx - -saveEngine = onnx_models / quant_fast_unet_fp16.engine - -fp16
+
 
     if args.trt:
         # it becomes slow in this version

@@ -286,6 +286,7 @@ if __name__ == "__main__":
         parser.add_argument('--use_softmax', default=True, help='Apply softmax to the output probabilities')
         parser.add_argument('--trt', action='store_true', help='Using TensorRT')
         parser.add_argument('--onnx_trt', action='store_true', help='Using TensorRT')
+        parser.add_argument('--run_engine_trt', action='store_true', help='Using TensorRT')
 
         return parser.parse_args()
 
@@ -320,16 +321,31 @@ if __name__ == "__main__":
         # prediction.shape (14, 64, 256, 256)
         input_tensor = torch.randn(input_shape).to("cuda")
 
-        onnx_program = torch.onnx.dynamo_export(model, input_tensor)
+        # onnx_program = torch.onnx.dynamo_export(model, input_tensor)
+        # if "onnx_models" not in os.listdir():
+        #     os.makedirs("onnx_models")
+        # onnx_program.save("onnx_models/fast_unet.onnx")
+
+        onnx_file_path = "onnx_models/fast_unet_fp32.onnx"
         if "onnx_models" not in os.listdir():
             os.makedirs("onnx_models")
-        onnx_program.save("onnx_models/fast_unet.onnx")
+        torch.onnx.export(
+            model,
+            input_tensor,
+            onnx_file_path,
+            input_names=['input'],
+            output_names=['output'],
+            opset_version=16,
+            export_params=True,
+            keep_initializers_as_inputs=True,
+        )
+
+        print(f"ONNX model exported to {onnx_file_path}")
 
         import numpy as np
 
         # Example numpy file for single-input ONNX
         calib_data = np.random.randn(1, 1, 64, 256, 256)
-
         calib_data = calib_data.astype(np.float32)
         np.save("calib_data.npy", calib_data)
 
@@ -353,17 +369,78 @@ if __name__ == "__main__":
         #
         calibration_data = np.load(calibration_data_path)
 
+        # moq.quantize(
+        #     onnx_path="onnx_models/fast_unet.onnx",
+        #     calibration_data=calibration_data,
+        #     output_path="onnx_models/quant_fast_unet.onnx",
+        #     quantize_mode="int8",
+        #     # high_precision_dtype="float16",
+        # )
+
         moq.quantize(
-            onnx_path="onnx_models/fast_unet.onnx",
+            onnx_path="onnx_models/fast_unet_fp32.onnx",
             calibration_data=calibration_data,
-            output_path="onnx_models/quant_fast_unet.onnx",
+            calibration_method='max',
+            output_path="onnx_models/quant_fast_unet_int8.onnx",
             quantize_mode="int8",
-            # high_precision_dtype="float16",
+            high_precision_dtype="float32",
         )
 
         # ! / usr / src / tensorrt / bin / trtexec - -onnx = onnx_models / quant_fast_unet.onnx - -saveEngine = onnx_models / quant_fast_unet.engine - -best
         # ! / usr / src / tensorrt / bin / trtexec - -onnx = onnx_models / quant_fast_unet.onnx - -saveEngine = onnx_models / quant_fast_unet_fp16.engine - -fp16
 
+    if args.run_engine_trt:
+        import sys
+
+        sys.path.insert(0, './TensorRT-Model-Optimizer')
+        from modelopt.torch._deploy._runtime import RuntimeRegistry
+        from modelopt.torch._deploy.device_model import DeviceModel
+        from modelopt.torch._deploy.utils import OnnxBytes
+
+        # Configure deployment
+        deployment = {
+            "runtime": "TRT",
+            "version": "10.3",
+            # "precision": 'int8',
+            "precision": 'fp32',
+        }
+
+
+        # Create an ONNX bytes object
+        onnx_bytes = OnnxBytes('onnx_models/quant_fast_unet_int8.onnx').to_bytes()
+
+        # Get the runtime client
+        client = RuntimeRegistry.get(deployment)
+
+        # Compile the TRT model
+        print("Compiling the TensorRT engine. This may take a few minutes...")
+        compiled_model = client.ir_to_compiled(onnx_bytes)
+        print("Compilation completed.")
+
+        # Print size of the compiled model
+        engine_size = len(compiled_model)
+        print(f"Size of the TensorRT engine: {engine_size / (1024 ** 2):.2f} MB")
+
+        # Create the device model
+        device_model = DeviceModel(client, compiled_model, metadata={})
+        print(f"Inference latency reported by device_model: {device_model.get_latency()} ms")
+
+        # device_model.eval()
+        predictor.network = device_model
+
+        for file in tqdm(files):
+            image, props = SimpleITKIO().read_images([file])
+            t0 = time()
+            seg = predictor.inference(image, props, args.use_softmax)
+            print(f'total: {time() - t0}')
+            sitk_img = sitk.GetImageFromArray(seg)
+            sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
+            sitk_img.SetOrigin(props['sitk_stuff']['origin'])
+            sitk_img.SetDirection(props['sitk_stuff']['direction'])
+            case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
+            sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
+
+        exit(0)
 
     if args.trt:
         # it becomes slow in this version

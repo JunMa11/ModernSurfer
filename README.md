@@ -92,7 +92,26 @@ to not to quantize ConvTranspose. Otherwise, Error: assert not np_y_scale.shape 
 ```
 Run:
 ```bash
-python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt
+python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt 
 ```
 
 But python run_engien_unsuccessful.py cannot be run. Need to check.
+
+
+New Mar 8 2025
+```bash
+wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.3.0/tars/TensorRT-10.3.0.26.Linux.x86_64-gnu.cuda-12.5.tar.gz
+tar -xvzf TensorRT-10.3.0.26.Linux.x86_64-gnu.cuda-12.5.tar.gz
+
+pip install -r requirements.txt
+
+python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt
+
+#python run_engine_trt.py
+
+python nnunet_infer_nii.py -i /home/ys155/nnUNet_inference/sample_data/ -o ./seg --model_path /home/ys155/fastUNet/model_weights/701/nnUNetTrainerMICCAI_repvgg__nnUNetPlans__3d_fullres --run_engine_trt
+
+trtexec --onnx=/tmp/tmpwumrwl2f/onnx/quant_fast_unet_int8.onnx --fp16 --int8 --saveEngine=/tmp/tmpwumrwl2f/quant_fast_unet_int8/quant_fast_unet_int8.engine --skipInference --builderOptimizationLevel=4 --verbose --exportLayerInfo=/tmp/tmpwumrwl2f/quant_fast_unet_int8/quant_fast_unet_int8.engine.graph.json
+
+```
+

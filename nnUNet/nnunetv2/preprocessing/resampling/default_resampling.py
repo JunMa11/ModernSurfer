@@ -306,6 +306,96 @@ def fast_resample_data_or_seg_to_shape(data: Union[torch.Tensor, np.ndarray],
     else:
         print("no resampling necessary")
         return data
+    
+def logit_to_segment(predicted_logits):
+    max_logit, max_class = torch.max(predicted_logits, dim=0)
+                
+                # Apply threshold: Only assign the class if its logit exceeds the threshold
+    segmentation = torch.where(max_logit >= 0.5, max_class, torch.tensor(0, device=predicted_logits.device))
+
+    return segmentation
+
+def resize_by_chunk(torch_data, new_shape, chunk_size = 300):
+    torch_data = torch_data.detach().cpu()
+    torch.cuda.empty_cache()
+    step = new_shape[0] // chunk_size + 1
+    seg_old_spacing = np.zeros(new_shape)
+    z = torch_data.shape[2]
+    stride = int(z / step)
+    step1 = [i * stride for i in range(step)] + [z]
+    z = new_shape[0]
+    stride = int(z / step)
+    step2 = [i * stride for i in range(step)] + [z]
+    for i in range(step):
+        size = list(new_shape)
+        size[0] = step2[i + 1] - step2[i]
+        slicer = torch_data[:,:, step1[i]:step1[i + 1]]#.half()
+        slicer = torch.nn.functional.interpolate(slicer.cuda(), mode='trilinear', size=size, align_corners=True)[0]
+        seg_old_spacing[step2[i]:step2[i + 1]] = logit_to_segment(slicer).cpu()
+        del slicer
+        torch.cuda.empty_cache()
+
+    return torch.from_numpy(seg_old_spacing)
+
+def fast_resample_logit_to_shape(torch_data: Union[torch.Tensor, np.ndarray],
+                                  new_shape: Union[Tuple[int, ...], List[int], np.ndarray],
+                                  current_spacing: Union[Tuple[float, ...], List[float], np.ndarray],
+                                  new_spacing: Union[Tuple[float, ...], List[float], np.ndarray],
+                                  is_seg: bool = False,
+                                  order: int = 3, order_z: int = 0,
+                                  force_separate_z: Union[bool, None] = False,
+                                  separate_z_anisotropy_threshold: float = ANISO_THRESHOLD):
+    use_gpu = True
+    device = torch.device("cuda" if use_gpu else "cpu")
+    order_to_mode_map = {
+        0: "nearest",
+        1: "trilinear" if new_shape[0] > 1 else "bilinear",
+        2: "trilinear" if new_shape[0] > 1 else "bilinear",
+        3: "trilinear" if new_shape[0] > 1 else "bicubic",
+        4: "trilinear" if new_shape[0] > 1 else "bicubic",
+        5: "trilinear" if new_shape[0] > 1 else "bicubic",
+    }
+    
+
+    resize_fn = torch.nn.functional.interpolate
+    kwargs = {
+        'mode': order_to_mode_map[order],
+        'align_corners': False,
+    }
+    dtype_data = torch_data.dtype
+    shape = np.array(torch_data[0].shape)
+    new_shape = np.array(new_shape)
+
+    if np.any(shape != new_shape):
+        
+        if new_shape[0] == 1:
+            torch_data = torch_data.transpose(1, 0)
+            new_shape = new_shape[1:]
+        else:
+            torch_data = torch_data.unsqueeze(0)
+        gc.collect()
+        empty_cache(device)
+        #print(f"Free memory: {free_mem / 1e9:.2f} GB")
+        #print(torch_data.shape)
+        if new_shape[0] < 600:
+            torch_data = resize_fn(torch_data.to(device), tuple(new_shape), **kwargs)
+
+            if new_shape[0] == 1:
+                torch_data = torch_data.transpose(1, 0)
+            else:
+                torch_data = torch_data.squeeze(0)
+        else:
+            torch_data = resize_by_chunk(torch_data.to(device), tuple(new_shape))
+
+        
+
+        reshaped_final_data = torch_data
+
+
+        return reshaped_final_data
+    else:
+        print("no resampling necessary")
+        return torch_data
 
 
 if __name__ == '__main__':

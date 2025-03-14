@@ -130,7 +130,7 @@ in line 150 in FastUNet/TensorRT-Model-Optimizer/modelopt/onnx/quantization/int8
 to not to quantize ConvTranspose. Otherwise, Error: assert not np_y_scale.shape or w32.shape[-1] == np_y_scale.shape[0].
 
 # transform the pytorch model into onnx file; transform fp32 onnx into INT8 onnx.
-python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt
+python nnunet_infer_nii_mar13.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt
 
 # install TensorRT 10.3
 wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.3.0/tars/TensorRT-10.3.0.26.Linux.x86_64-gnu.cuda-12.5.tar.gz
@@ -150,7 +150,7 @@ pip install "numpy<2.0.0"
 pip install torch torchvision --upgrade
 
 # running with the trt engine
-python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --run_engine_trt
+python nnunet_infer_nii_mar13.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --run_engine_trt
 
 ```
 

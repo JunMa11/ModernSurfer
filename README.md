@@ -123,6 +123,12 @@ git clone https://github.com/NVIDIA/TensorRT-Model-Optimizer.git
 python -m pip install torch torch-tensorrt tensorrt --extra-index-url https://download.pytorch.org/whl/cu124
 pip install "nvidia-modelopt[all]" -U --extra-index-url https://pypi.nvidia.com
 
+# Note: Currently, transposeConv has bug when quantizing, so ignor them by modifying:
+adding: 
+quantizable_op_types = [op for op in quantizable_op_types if op != "ConvTranspose"]
+in line 150 in FastUNet/TensorRT-Model-Optimizer/modelopt/onnx/quantization/int8.py,
+to not to quantize ConvTranspose. Otherwise, Error: assert not np_y_scale.shape or w32.shape[-1] == np_y_scale.shape[0].
+
 # transform the pytorch model into onnx file; transform fp32 onnx into INT8 onnx.
 python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt
 

@@ -18,7 +18,7 @@ from nnunetv2.utilities.helpers import empty_cache, dummy_context
 from nnunetv2.imageio.simpleitk_reader_writer import SimpleITKIO
 from acvl_utils.cropping_and_padding.bounding_boxes import bounding_box_to_slice
 from nnunetv2.architecture.repvgg_unet import plain_unet_S5, plain_unet_S4, plain_unet_702, plain_unet
-from plain_unet import build_fix_plain_unet
+from nnunetv2.preprocessing.resampling.default_resampling import fast_resample_logit_to_shape
 from tqdm import tqdm
 import argparse
 import glob
@@ -49,10 +49,12 @@ def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits
 
     # apply_inference_nonlin will convert to torch
     if properties_dict['shape_after_cropping_and_before_resampling'][0] < 600:
-        predicted_logits = configuration_manager.resampling_fn_probabilities(predicted_logits,
+        predicted_logits = fast_resample_logit_to_shape(predicted_logits,
                                             properties_dict['shape_after_cropping_and_before_resampling'],
                                             current_spacing,
                                             [properties_dict['spacing'][i] for i in plans_manager.transpose_forward])
+        gc.collect()
+        empty_cache(predicted_logits.device)
         if use_softmax:
             predicted_probabilities = label_manager.apply_inference_nonlin(predicted_logits)
 
@@ -62,30 +64,24 @@ def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits
             segmentation = label_manager.convert_probabilities_to_segmentation(predicted_probabilities)
         else:
             # Get the class with the maximum logit at each pixel
-            gc.collect()
-            empty_cache(predicted_logits.device)
-            
             max_logit, max_class = torch.max(predicted_logits, dim=0)
                 
                 # Apply threshold: Only assign the class if its logit exceeds the threshold
             segmentation = torch.where(max_logit >= 0.5, max_class, torch.tensor(0, device=predicted_logits.device))
-        dtype = torch.uint8 if len(label_manager.foreground_labels) < 255 else torch.uint16
-        segmentation_reverted_cropping = torch.zeros(properties_dict['shape_before_cropping'], dtype=dtype).to('cuda')
-        slicer = bounding_box_to_slice(properties_dict['bbox_used_for_cropping'])
-        segmentation_reverted_cropping[slicer] = segmentation
+
     else:
 
-        segmentation = configuration_manager.resampling_fn_probabilities(predicted_logits,
+        segmentation = fast_resample_logit_to_shape(predicted_logits,
                                             properties_dict['shape_after_cropping_and_before_resampling'],
                                             current_spacing,
                                             [properties_dict['spacing'][i] for i in plans_manager.transpose_forward])
 
 
 
-        dtype = torch.uint8 if len(label_manager.foreground_labels) < 255 else torch.uint16
-        segmentation_reverted_cropping = torch.zeros(properties_dict['shape_before_cropping'], dtype=dtype)
-        slicer = bounding_box_to_slice(properties_dict['bbox_used_for_cropping'])
-        segmentation_reverted_cropping[slicer] = segmentation
+    dtype = torch.uint8 if len(label_manager.foreground_labels) < 255 else torch.uint16
+    segmentation_reverted_cropping = torch.zeros(properties_dict['shape_before_cropping'], dtype=dtype)
+    slicer = bounding_box_to_slice(properties_dict['bbox_used_for_cropping'])
+    segmentation_reverted_cropping[slicer] = segmentation
 
     del segmentation
 

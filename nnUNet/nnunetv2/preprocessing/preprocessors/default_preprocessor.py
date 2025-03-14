@@ -28,6 +28,7 @@ from nnunetv2.utilities.dataset_name_id_conversion import maybe_convert_to_datas
 from nnunetv2.utilities.find_class_by_name import recursive_find_python_class
 from nnunetv2.utilities.plans_handling.plans_handler import PlansManager, ConfigurationManager
 from nnunetv2.utilities.utils import get_filenames_of_train_images_and_targets
+from nnunetv2.preprocessing.resampling.default_resampling import fast_resample_data_or_seg_to_shape
 
 
 class DefaultPreprocessor(object):
@@ -86,7 +87,7 @@ class DefaultPreprocessor(object):
         # print('current shape', data.shape[1:], 'current_spacing', original_spacing,
         #       '\ntarget shape', new_shape, 'target_spacing', target_spacing)
 
-        data = configuration_manager.resampling_fn_data(data, new_shape, original_spacing, target_spacing)
+        data = fast_resample_data_or_seg_to_shape(data, new_shape, original_spacing, target_spacing)
 
 
 

@@ -109,9 +109,42 @@ python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/7
 
 #python run_engine_trt.py
 
-python nnunet_infer_nii.py -i /home/ys155/nnUNet_inference/sample_data/ -o ./seg --model_path /home/ys155/fastUNet/model_weights/701/nnUNetTrainerMICCAI_repvgg__nnUNetPlans__3d_fullres --run_engine_trt
+python nnunet_infer_nii.py -i /home/ys155/nnUNet_inference/sample_data/ -o ./seg --model_path /home/ys155/fastUNet/model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --run_engine_trt
 
 trtexec --onnx=/tmp/tmpwumrwl2f/onnx/quant_fast_unet_int8.onnx --fp16 --int8 --saveEngine=/tmp/tmpwumrwl2f/quant_fast_unet_int8/quant_fast_unet_int8.engine --skipInference --builderOptimizationLevel=4 --verbose --exportLayerInfo=/tmp/tmpwumrwl2f/quant_fast_unet_int8/quant_fast_unet_int8.engine.graph.json
+
+```
+
+
+Mar 13 2025; only last step fails: Error: version is not matched.
+```bash
+
+git clone https://github.com/NVIDIA/TensorRT-Model-Optimizer.git
+python -m pip install torch torch-tensorrt tensorrt --extra-index-url https://download.pytorch.org/whl/cu124
+pip install "nvidia-modelopt[all]" -U --extra-index-url https://pypi.nvidia.com
+
+# transform the pytorch model into onnx file; transform fp32 onnx into INT8 onnx.
+python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --onnx_trt
+
+# install TensorRT 10.3
+wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.3.0/tars/TensorRT-10.3.0.26.Linux.x86_64-gnu.cuda-12.5.tar.gz
+tar -xvzf TensorRT-10.3.0.26.Linux.x86_64-gnu.cuda-12.5.tar.gz
+
+TENSORRT_PATH=$(pwd)/TensorRT-10.3.0.26
+echo "export TENSORRT_HOME=${TENSORRT_PATH}" >> ~/.bashrc
+echo "export PATH=\$TENSORRT_HOME/bin:\$PATH" >> ~/.bashrc
+echo "export LD_LIBRARY_PATH=\$TENSORRT_HOME/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
+ln -sf /workspace/TensorRT-10.3.0.26/bin/trtexec /usr/local/bin/trtexec
+source ~/.bashrc
+
+sudo apt-get update
+sudo apt-get -y install tensorrt
+pip install -r requirements.txt
+pip install "numpy<2.0.0"
+pip install torch torchvision --upgrade
+
+# running with the trt engine
+python nnunet_infer_nii.py -i sample_data/ -o ./seg --model_path model_weights/701/nnUNetTrainerMICCAI__nnUNetPlans__3d_fullres --run_engine_trt
 
 ```
 

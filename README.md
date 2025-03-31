@@ -20,8 +20,8 @@ To install the nnUNet Inference module, you need to have latest pytorch installe
 
 1. create env and clone the repo
 ```bash
-conda create -n fast_unet python==3.10
-conda activate fast_unet
+conda create -n modernsurfer python==3.10
+conda activate modernsurfer
 git clone https://github.com/JunMa11/ModernSurfer.git
 ```
 
@@ -35,7 +35,7 @@ pip install cupy-cuda12x
 ## Download dataset (TestSet_Mindboggle-101) and model weights(checkpoint_final.pth) from the following link
 https://drive.google.com/drive/folders/1PCMJdxUDFos9op9UurdosrAbOXWfjwQ2?usp=sharing
 
-put the dataset in FastUnet/nnUNet_data and model weights folders in FastUnet/model_weights
+put the dataset in ModernSurfer/nnUNet_data and model weights folders in ModernSurfer/model_weights
 
 ## Running Inference
 
@@ -50,7 +50,7 @@ python nnunet_infer_nii.py -i <path_to_sample_data> -o <path_to_predictions> --m
 For example
 
 ```bash
-python nnunet_infer_nii.py -i /home/achoi4/nnUNet_inference/sample_data/ -o ./seg --model_path /home/achoi4/FastUNet/model_weights/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres
+python nnunet_infer_nii.py -i /home/achoi4/nnUNet_inference/sample_data/ -o ./seg --model_path /home/achoi4/ModernSurfer/model_weights/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres
 ```
 
 In the case that you want to run different models with different plans, configurations, or checkpoints, you can use the run_inference_checkpoints.py file.

@@ -28,7 +28,7 @@ git clone https://github.com/JunMa11/ModernSurfer.git
 2. Install the packages:
 ```bash
 pip install torch torchvision torchaudio
-cd nnUNet
+cd ModernSurfer/nnUNet
 pip install -e .
 pip install cupy-cuda12x
 ```

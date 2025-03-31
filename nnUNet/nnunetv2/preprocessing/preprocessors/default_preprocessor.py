@@ -17,6 +17,7 @@ from time import sleep, time
 from typing import Tuple, Union
 
 import numpy as np
+import torch
 from batchgenerators.utilities.file_and_folder_operations import *
 from tqdm import tqdm
 
@@ -38,7 +39,7 @@ class DefaultPreprocessor(object):
         Everything we need is in the plans. Those are given when run() is called
         """
 
-    def run_case_npy(self, data: np.ndarray, seg: Union[np.ndarray, None], properties: dict,
+    def run_case_npy(self, data: [np.ndarray, torch.Tensor], seg: Union[np.ndarray, None], properties: dict,
                      plans_manager: PlansManager, configuration_manager: ConfigurationManager,
                      dataset_json: Union[dict, str]):
         # let's not mess up the inputs!
@@ -87,11 +88,15 @@ class DefaultPreprocessor(object):
         # print('current shape', data.shape[1:], 'current_spacing', original_spacing,
         #       '\ntarget shape', new_shape, 'target_spacing', target_spacing)
 
+        t0 =  time()
+
         data = fast_resample_data_or_seg_to_shape(data, new_shape, original_spacing, target_spacing)
 
+        resample_time = time() - t0
 
+        print(f"Resampling time for preprocessing: {resample_time:.6f}")
 
-        return data
+        return data, resample_time
 
     def run_case(self, image_files: List[str], seg_file: Union[str, None], plans_manager: PlansManager,
                  configuration_manager: ConfigurationManager,

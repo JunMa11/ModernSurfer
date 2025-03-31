@@ -24,8 +24,6 @@ import argparse
 import glob
 import os
 import gc
-from collections import OrderedDict
-import pandas as pd
 
 import torch_tensorrt as torchtrt
 from modelopt.torch.quantization.utils import export_torch_mode
@@ -51,16 +49,12 @@ def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits
 
     # apply_inference_nonlin will convert to torch
     if properties_dict['shape_after_cropping_and_before_resampling'][0] < 600:
-        t0 = time()
         predicted_logits = fast_resample_logit_to_shape(predicted_logits,
                                             properties_dict['shape_after_cropping_and_before_resampling'],
                                             current_spacing,
                                             [properties_dict['spacing'][i] for i in plans_manager.transpose_forward])
-        postprocess_resample_time = time() - t0
-
         gc.collect()
         empty_cache(predicted_logits.device)
-        t0_logit_to_seg = time()
         if use_softmax:
             predicted_probabilities = label_manager.apply_inference_nonlin(predicted_logits)
 
@@ -68,22 +62,19 @@ def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits
             
             # Start timing for converting probabilities to segmentation
             segmentation = label_manager.convert_probabilities_to_segmentation(predicted_probabilities)
-
         else:
-            t0_logit_to_seg = time()
             # Get the class with the maximum logit at each pixel
             max_logit, max_class = torch.max(predicted_logits, dim=0)
                 
                 # Apply threshold: Only assign the class if its logit exceeds the threshold
             segmentation = torch.where(max_logit >= 0.5, max_class, torch.tensor(0, device=predicted_logits.device))
-        logit_to_seg_time = time() - t0_logit_to_seg
+
     else:
-        t0 = time()
+
         segmentation = fast_resample_logit_to_shape(predicted_logits,
                                             properties_dict['shape_after_cropping_and_before_resampling'],
                                             current_spacing,
                                             [properties_dict['spacing'][i] for i in plans_manager.transpose_forward])
-        postprocess_resample_time = time() - t0
 
 
 
@@ -97,7 +88,7 @@ def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits
     # Revert transpose
     segmentation_reverted_cropping = segmentation_reverted_cropping.permute(plans_manager.transpose_backward)
 
-    return segmentation_reverted_cropping.cpu(), logit_to_seg_time, postprocess_resample_time
+    return segmentation_reverted_cropping.cpu()
 
 class SimplePredictor(nnUNetPredictor):
     """
@@ -134,13 +125,10 @@ class SimplePredictor(nnUNetPredictor):
             parameters.append(ckpt)
 
         configuration_manager = plans_manager.get_configuration(configuration_name)
-        print(f"This is the trainer name: {trainer_name}")
         # restore network
         num_input_channels = determine_num_input_channels(plans_manager, configuration_manager, dataset_json)
         trainer_class = recursive_find_python_class(join(nnunetv2.__path__[0], "training", "nnUNetTrainer"),
                                                     trainer_name, 'nnunetv2.training.nnUNetTrainer')
-        
-        print(f'Using trainer class: {trainer_class}')
 
         if trainer_class is None:
             raise RuntimeError(f'Unable to locate trainer class {trainer_name} in nnunetv2.training.nnUNetTrainer. '
@@ -185,14 +173,14 @@ class SimplePredictor(nnUNetPredictor):
     def preprocess(self, image, props):
         preprocessor = self.configuration_manager.preprocessor_class(verbose=False)
         image = torch.from_numpy(image).to(dtype=torch.float32, memory_format=torch.contiguous_format).to(self.device)
-        data, resample_time = preprocessor.run_case_npy(image,
+        data = preprocessor.run_case_npy(image,
                                                   None,
                                                   props,
                                                   self.plans_manager,
                                                   self.configuration_manager,
                                                   self.dataset_json)
         #data = torch.from_numpy(data).to(dtype=torch.float32, memory_format=torch.contiguous_format)
-        return data, resample_time
+        return data
 
     def _internal_predict_sliding_window_return_logits(self,
                                                        data: torch.Tensor,
@@ -251,7 +239,7 @@ class SimplePredictor(nnUNetPredictor):
     
 
     def inference(self, image, properties_dict, use_softmax):
-        image, resample_time = self.preprocess(image, properties_dict)
+        image = self.preprocess(image, properties_dict)
 
 
         with torch.no_grad():
@@ -270,11 +258,11 @@ class SimplePredictor(nnUNetPredictor):
 
                 predicted_logits = self._internal_predict_sliding_window_return_logits(data, slicers,
                                             self.perform_everything_on_device)
-                print(f'predicted_logits shape: {predicted_logits.shape}')
+
                 empty_cache(self.device) # Start time for inference time calculation
                 predicted_logits = predicted_logits[(slice(None), *slicer_revert_padding[1:])]
 
-                segmentation, logit_to_seg_time, postprocess_resample_time = convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits,        
+                segmentation = convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits,
                                                                 self.plans_manager,
                                                                 self.configuration_manager,
                                                                 self.label_manager,
@@ -282,11 +270,9 @@ class SimplePredictor(nnUNetPredictor):
                                                                 use_softmax,
                                                                 return_probabilities=False,
                                                                 )
-                print(f'segmentation shape: {segmentation.shape}')
-                print(f'Logit to seg time:: {logit_to_seg_time:.4f}')
-                print(f'Postprocessing resampling time: {postprocess_resample_time:.6f}')
 
-        return segmentation,resample_time, logit_to_seg_time, postprocess_resample_time
+
+        return segmentation
 
 if __name__ == "__main__":
     def parse_arguments():
@@ -296,7 +282,7 @@ if __name__ == "__main__":
         parser.add_argument('--model_path', type=str, required=True, help='Name of the model to use for inference')
         parser.add_argument('--fold', type=str, default='all', help='Fold number to use for inference (default: 0)')
         parser.add_argument('--checkpoint', type=str, default='checkpoint_final.pth', help='Path to the model checkpoint file')
-        parser.add_argument('--use_softmax', default=False, help='Apply softmax to the output probabilities')
+        parser.add_argument('--use_softmax', default=True, help='Apply softmax to the output probabilities')
         parser.add_argument('--trt', action='store_true', help='Using TensorRT')
         parser.add_argument('--onnx_trt', action='store_true', help='Using TensorRT')
         parser.add_argument('--run_engine_trt', action='store_true', help='Using TensorRT')
@@ -325,8 +311,6 @@ if __name__ == "__main__":
     output_folder = args.output_path
     os.makedirs(output_folder, exist_ok=True)
     files = glob.glob(os.path.join(input_folder, '*'))
-
-    prediction_results = []
 
     if args.onnx_trt:
         model = predictor.network
@@ -446,8 +430,7 @@ if __name__ == "__main__":
         for file in tqdm(files):
             image, props = SimpleITKIO().read_images([file])
             t0 = time()
-            seg, resample_time, logit_to_seg_time, postprocess_resample_time = predictor.inference(image, props, args.use_softmax)
-            elapsed_time = time() - t0
+            seg = predictor.inference(image, props, args.use_softmax)
             print(f'total: {time() - t0}')
             sitk_img = sitk.GetImageFromArray(seg)
             sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
@@ -455,14 +438,6 @@ if __name__ == "__main__":
             sitk_img.SetDirection(props['sitk_stuff']['direction'])
             case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
             sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
-
-            result = OrderedDict()
-            result["Filename"] = case_name
-            result["Prediction Time (seconds)"] = elapsed_time
-            result["Preprocess Resampling time (seconds)"] = resample_time
-            result["Logit to segmentation time (seconds)"] = logit_to_seg_time
-            result["Postprocessing Resampling time (seconds)"] = postprocess_resample_time
-            prediction_results.append(result)
 
         exit(0)
 
@@ -489,52 +464,26 @@ if __name__ == "__main__":
             for file in tqdm(files):
                 image, props = SimpleITKIO().read_images([file])
                 t0 = time()
-                seg, resample_time, logit_to_seg_time, postprocess_resample_time = predictor.inference(image, props, args.use_softmax)
-                elapsed_time = time() - t0
-                print(f'total prediction time: {time() - t0}')
+                seg = predictor.inference(image, props, args.use_softmax)
+                print(f'total: {time() - t0}')
                 sitk_img = sitk.GetImageFromArray(seg)
                 sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
                 sitk_img.SetOrigin(props['sitk_stuff']['origin'])
                 sitk_img.SetDirection(props['sitk_stuff']['direction'])
                 case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
                 sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
-
-                result = OrderedDict()
-                result["Filename"] = case_name
-                result["Prediction Time (seconds)"] = elapsed_time
-                result["Preprocess Resampling time (seconds)"] = resample_time
-                result["Logit to segmentation time (seconds)"] = logit_to_seg_time
-                result["Postprocessing Resampling time (seconds)"] = postprocess_resample_time
-                prediction_results.append(result)
     else:
         for file in tqdm(files):
             image, props = SimpleITKIO().read_images([file])
             t0 = time()
-            seg, resample_time, logit_to_seg_time, postprocess_resample_time = predictor.inference(image, props, args.use_softmax)
-            elapsed_time = time() - t0
-            print(f'total: {time() - t0:.4f}')
+            seg = predictor.inference(image, props, args.use_softmax)
+            print(f'total: {time() - t0}')
             sitk_img = sitk.GetImageFromArray(seg)
             sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
             sitk_img.SetOrigin(props['sitk_stuff']['origin'])
             sitk_img.SetDirection(props['sitk_stuff']['direction'])
             case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
             sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
-            
-            result = OrderedDict()
-            result["Filename"] = case_name
-            result["Prediction Time (seconds)"] = elapsed_time
-            result["Preprocess Resampling time (seconds)"] = resample_time
-            result["Logit to segmentation time (seconds)"] = logit_to_seg_time
-            result["Postprocessing Resampling time (seconds)"] = postprocess_resample_time
-            prediction_results.append(result)
-
-    # Convert list of OrderedDicts to DataFrame
-    results_df = pd.DataFrame(prediction_results)
-
-    # Save results to an Excel file
-    results_df.to_excel(output_folder+"/inference_times.xlsx", index=False, engine="openpyxl")
-
-    print(f"Prediction times saved to {output_folder}")
 
 
 

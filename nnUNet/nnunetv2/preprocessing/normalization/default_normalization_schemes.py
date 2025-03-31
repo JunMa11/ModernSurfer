@@ -11,6 +11,7 @@ class ImageNormalization(ABC):
                  target_dtype: torch.dtype = torch.float32):
         assert use_mask_for_norm is None or isinstance(use_mask_for_norm, bool)
         self.use_mask_for_norm = use_mask_for_norm
+        print(f"Using mask for normalization: {self.use_mask_for_norm}")
         assert isinstance(intensityproperties, dict) or intensityproperties is None
         self.intensityproperties = intensityproperties
         self.target_dtype = target_dtype

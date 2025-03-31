@@ -45,6 +45,13 @@ from batchgenerators.utilities.file_and_folder_operations import join, load_json
 from nnunetv2.utilities.get_network_from_plans import get_network_from_plans
 from nnunetv2.utilities.label_handling.label_handling import convert_labelmap_to_one_hot, determine_num_input_channels
 from nnunetv2.architecture.repvgg_unet import plain_unet, plain_unet_S4, plain_unet_S5, plain_unet_702
+from nnunetv2.training.loss.deep_supervision import DeepSupervisionWrapper
+from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
+from nnunetv2.training.loss.dice_focal_loss import DC_and_Focal_Loss
+from nnunetv2.utilities.compute_class_alpha import compute_class_alpha
+import numpy as np
+from nnunetv2.training.loss.compound_losses import DC_and_topk_loss
+from nnunetv2.training.loss.tversky_loss import DiceTverskyLoss
 
 
 class nnUNetTrainerMICCAI(nnUNetTrainer):
@@ -294,4 +301,93 @@ class nnUNetTrainerMICCAI_repvgg_S5(nnUNetTrainerMICCAI):
         
         model = plain_unet_S5(num_output_channels, True, False)
         return model
+    
+class nnUNetTrainerDiceFocalLoss_NoMirroring(nnUNetTrainer):
+    def configure_rotation_dummyDA_mirroring_and_inital_patch_size(self):
+        rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes = \
+            super().configure_rotation_dummyDA_mirroring_and_inital_patch_size()
+        mirror_axes = None
+        self.inference_allowed_mirroring_axes = None
+        return rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes
+    
+    def _build_loss(self):
+        alpha = compute_class_alpha(self.preprocessed_dataset_folder_base, self.label_manager, self.label_manager.ignore_label)
+        assert not self.label_manager.has_regions, "regions not supported by this trainer"
+        loss = DC_and_Focal_Loss(
+            {'batch_dice': self.configuration_manager.batch_dice,
+                'smooth': 1e-5, 'do_bg': False, 'ddp': self.is_ddp},
+            alpha=alpha,
+            gamma=2.0,
+            ignore_index=self.label_manager.ignore_label,
+        )
+        if self.enable_deep_supervision:
+            deep_supervision_scales = self._get_deep_supervision_scales()
+
+            # we give each output a weight which decreases exponentially (division by 2) as the resolution decreases
+            # this gives higher resolution outputs more weight in the loss
+            weights = np.array([1 / (2**i) for i in range(len(deep_supervision_scales))])
+            weights[-1] = 0
+
+            # we don't use the lowest 2 outputs. Normalize weights so that they sum to 1
+            weights = weights / weights.sum()
+            # now wrap the loss
+            loss = DeepSupervisionWrapper(loss, weights)
+        return loss
+    
+class nnUNetTrainerDiceTopK10Loss_NoMirroring(nnUNetTrainer):
+    def configure_rotation_dummyDA_mirroring_and_inital_patch_size(self):
+        rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes = \
+            super().configure_rotation_dummyDA_mirroring_and_inital_patch_size()
+        mirror_axes = None
+        self.inference_allowed_mirroring_axes = None
+        return rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes
+    
+    def _build_loss(self):
+        assert not self.label_manager.has_regions, "regions not supported by this trainer"
+        loss = DC_and_topk_loss(
+            {"batch_dice": self.configuration_manager.batch_dice, "smooth": 1e-5, "do_bg": False, "ddp": self.is_ddp},
+            {"k": 10, "label_smoothing": 0.0},
+            weight_ce=1,
+            weight_dice=1,
+            ignore_label=self.label_manager.ignore_label,
+        )
+        if self.enable_deep_supervision:
+            deep_supervision_scales = self._get_deep_supervision_scales()
+
+            # we give each output a weight which decreases exponentially (division by 2) as the resolution decreases
+            # this gives higher resolution outputs more weight in the loss
+            weights = np.array([1 / (2**i) for i in range(len(deep_supervision_scales))])
+            weights[-1] = 0
+
+            # we don't use the lowest 2 outputs. Normalize weights so that they sum to 1
+            weights = weights / weights.sum()
+            # now wrap the loss
+            loss = DeepSupervisionWrapper(loss, weights)
+        return loss
+    
+class nnUNetTrainerTverskyLoss_NoMirroring(nnUNetTrainer):
+    def configure_rotation_dummyDA_mirroring_and_inital_patch_size(self):
+        rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes = \
+            super().configure_rotation_dummyDA_mirroring_and_inital_patch_size()
+        mirror_axes = None
+        self.inference_allowed_mirroring_axes = None
+        return rotation_for_DA, do_dummy_2d_data_aug, initial_patch_size, mirror_axes
+    
+    def _build_loss(self):
+        loss = DiceTverskyLoss({'batch_dice': self.configuration_manager.batch_dice,
+                'smooth': 1e-5, 'do_bg': False, 'ddp': self.is_ddp},
+                alpha=0.3, 
+                beta=0.7, 
+                weight_dice=1.0, 
+                weight_tversky=1.0
+        )
+
+        if self.enable_deep_supervision:
+            deep_supervision_scales = self._get_deep_supervision_scales()
+            weights = np.array([1 / (2 ** i) for i in range(len(deep_supervision_scales))])
+            weights[-1] = 0
+            weights = weights / weights.sum()
+            loss = DeepSupervisionWrapper(loss, weights)
+
+        return loss
     

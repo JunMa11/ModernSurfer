@@ -3,6 +3,7 @@ from typing import List
 # Hello! crop_to_nonzero is the function you are looking for. Ignore the rest.
 import cupy as cp
 from cupyx.scipy import ndimage
+import torch
 
 # Assume you have a binary array 'mask' on the GPU
 def create_nonzero_mask(data):
@@ -105,6 +106,7 @@ def crop_to_nonzero(data, seg=None, nonzero_label=-1):
         seg[(seg == 0) & (~nonzero_mask)] = nonzero_label
     else:
         seg = np.where(nonzero_mask, np.int8(0), np.int8(nonzero_label))
+        seg = torch.as_tensor(seg).to(data.device)
     return data, seg, bbox
 
 

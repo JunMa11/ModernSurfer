@@ -54,7 +54,7 @@ python nnunet_infer_nii.py -i <path_to_sample_data> -o <path_to_predictions> --m
 For example
 
 ```bash
-python nnunet_infer_nii.py -i /home/achoi4/ModernSurfer/nnUNet_data/TestSet_Mindboggle-101/imagesTs -o ./seg --model_path /home/achoi4/ModernSurfer/model_weights/ --fold all -- checkpoint checkpoint_final.pth
+python nnunet_infer_nii.py -i /home/achoi4/ModernSurfer/nnUNet_data/TestSet_Mindboggle-101/imagesTs -o ./seg --model_path /home/achoi4/ModernSurfer/model_weights/ --fold all --checkpoint checkpoint_final.pth
 ```
 
 In the case that you want to run different models with different plans, configurations, or checkpoints, you can use the run_inference_checkpoints.py file.

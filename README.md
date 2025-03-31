@@ -31,6 +31,7 @@ pip install torch torchvision torchaudio
 cd ModernSurfer/nnUNet
 pip install -e .
 pip install cupy-cuda12x
+pip install openpyxl #If you want to see the inference time of each file in an excel file
 ```
 ## Download dataset (TestSet_Mindboggle-101) and the content of model weights(checkpoint_final.pth, dataset.json, and plans.json) from the following links
 Dataset: https://drive.google.com/drive/folders/1PCMJdxUDFos9op9UurdosrAbOXWfjwQ2?usp=sharing

@@ -26,8 +26,6 @@ import os
 import gc
 from collections import OrderedDict
 import pandas as pd
-
-import torch_tensorrt as torchtrt
 from modelopt.torch.quantization.utils import export_torch_mode
 
 
@@ -467,6 +465,7 @@ if __name__ == "__main__":
         exit(0)
 
     if args.trt:
+        import torch_tensorrt as torchtrt
         # it becomes slow in this version
         model = predictor.network
         model.cuda()

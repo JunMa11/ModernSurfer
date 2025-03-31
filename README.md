@@ -38,6 +38,9 @@ Model weights: https://drive.google.com/drive/folders/1ncHcP_xRi7xXhqpY7eSlssco8
 
 put the dataset in ModernSurfer/nnUNet_data and model weights folders in ModernSurfer/model_weights
 
+If you are familiar with nnUNet, the model weights are essentially obtained in the nnUNet_results folder. 
+It requires the dataset.json and plans.json file to be outside of the "fold_all" folder while the checkpoint_final.pth should be inside the "fold_all" folder to make inference.
+
 ## Running Inference
 
 To run inference using a trained nnUNet model, follow these steps:
@@ -55,5 +58,5 @@ python nnunet_infer_nii.py -i /home/achoi4/ModernSurfer/nnUNet_data/TestSet_Mind
 ```
 
 In the case that you want to run different models with different plans, configurations, or checkpoints, you can use the run_inference_checkpoints.py file.
-In which you can change the input directory, output directory, model path, trainer, plans, configuration and checkpoints to make predictions for several different models. 
+In which you can change the input directory, output directory, model path, trainer, plans, configuration and checkpoints to make inferences for several different models. 
 This file essentially run the same command above in sequence, it does NOT run the command in parallel with different GPU but rather run them in sequence on the same GPU.

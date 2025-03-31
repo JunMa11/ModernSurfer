@@ -26,7 +26,6 @@ import os
 import gc
 from collections import OrderedDict
 import pandas as pd
-from modelopt.torch.quantization.utils import export_torch_mode
 
 
 def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits: Union[torch.Tensor, np.ndarray],
@@ -466,6 +465,7 @@ if __name__ == "__main__":
 
     if args.trt:
         import torch_tensorrt as torchtrt
+        from modelopt.torch.quantization.utils import export_torch_mode
         # it becomes slow in this version
         model = predictor.network
         model.cuda()

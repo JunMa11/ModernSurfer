@@ -32,8 +32,9 @@ cd nnUNet
 pip install -e .
 pip install cupy-cuda12x
 ```
-## Download dataset (TestSet_Mindboggle-101) and model weights(checkpoint_final.pth) from the following link
-https://drive.google.com/drive/folders/1PCMJdxUDFos9op9UurdosrAbOXWfjwQ2?usp=sharing
+## Download dataset (TestSet_Mindboggle-101) and the content of model weights(checkpoint_final.pth, dataset.json, and plans.json) from the following links
+Dataset: https://drive.google.com/drive/folders/1PCMJdxUDFos9op9UurdosrAbOXWfjwQ2?usp=sharing
+Model weights: https://drive.google.com/drive/folders/1ncHcP_xRi7xXhqpY7eSlssco88rA8vQ6?usp=sharing
 
 put the dataset in ModernSurfer/nnUNet_data and model weights folders in ModernSurfer/model_weights
 
@@ -44,13 +45,13 @@ To run inference using a trained nnUNet model, follow these steps:
 1. Use the following command to perform inference:
 
 ```bash
-python nnunet_infer_nii.py -i <path_to_sample_data> -o <path_to_predictions> --model_path <path_to_model_weight>
+python nnunet_infer_nii.py -i <path_to_sample_data> -o <path_to_predictions> --model_path <path_to_model_weight> --fold <fold_used_for_training> --checkpoint <checkpoint_for_prediction>
 ```
 
 For example
 
 ```bash
-python nnunet_infer_nii.py -i /home/achoi4/nnUNet_inference/sample_data/ -o ./seg --model_path /home/achoi4/ModernSurfer/model_weights/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres
+python nnunet_infer_nii.py -i /home/achoi4/ModernSurfer/nnUNet_data/TestSet_Mindboggle-101/imagesTs -o ./seg --model_path /home/achoi4/ModernSurfer/model_weights/ --fold all -- checkpoint checkpoint_final.pth
 ```
 
 In the case that you want to run different models with different plans, configurations, or checkpoints, you can use the run_inference_checkpoints.py file.

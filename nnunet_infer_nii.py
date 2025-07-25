@@ -1,3 +1,6 @@
+"""
+Added reorientation before inference
+"""
 import numpy as np
 import torch
 from time import time
@@ -24,9 +27,72 @@ import argparse
 import glob
 import os
 import gc
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import pandas as pd
+import nibabel as nib
+import nibabel.orientations as nio
 
+def get_case_name(file, t1_counter):
+    session_dir = os.path.dirname(file)
+    subject = os.path.basename(os.path.dirname(session_dir))
+    session = os.path.basename(session_dir)
+    subject_id = subject.replace("sub-", "")
+    session_id = session.replace("ses-", "")
+    index = t1_counter[(subject_id, session_id)]
+    case_name = f"sub_{subject_id}_{session_id}_{index}.nii.gz"
+    t1_counter[(subject_id, session_id)] += 1
+    return case_name
+
+def check_orientation(nii_ornt, desired_ornt):
+    """
+    Check if reorientation is needed
+    """
+    return nii_ornt != desired_ornt
+
+def reorient_image(image, current_ornt, desired_ornt):
+    """
+    Reorient the image to the desired orientation.
+    """ 
+    data = image.get_fdata()
+    affine = image.affine
+    print(f"Reorienting from {current_ornt} to {desired_ornt}")
+    ornt_trans = nio.ornt_transform(nio.axcodes2ornt(current_ornt), nio.axcodes2ornt(desired_ornt))
+    # Reorient image and affine
+    reoriented_data = nio.apply_orientation(data, ornt_trans)
+    reoriented_affine = nio.inv_ornt_aff(ornt_trans, image.shape)
+    new_affine = affine @ reoriented_affine
+    return reoriented_data, new_affine
+
+def reorient_seg(seg_data, orig_affine, image_ornt, infer_ornt):
+    """
+    Reorient the image to the desired orientation.
+    """
+    print(f"Reorienting back to {image_ornt}")
+    inverse_ornt = nio.ornt_transform(nio.axcodes2ornt(infer_ornt), nio.axcodes2ornt(image_ornt))
+    reoriented_seg = nio.apply_orientation(seg_data, inverse_ornt)
+    reoriented_seg_affine = nio.inv_ornt_aff(inverse_ornt, seg_data.shape)
+    seg_affine = orig_affine @ reoriented_seg_affine
+    return reoriented_seg, seg_affine
+
+def set_sitk_metadata_from_affine(sitk_img, affine):
+    import numpy as np
+
+    spacing = tuple(np.linalg.norm(affine[:3, i]) for i in range(3))
+    origin = tuple(float(affine[i, 3]) for i in range(3))
+    direction = tuple(float(x) for x in affine[:3, :3].flatten(order='F'))
+
+    sitk_img.SetSpacing(spacing)
+    sitk_img.SetOrigin(origin)
+    sitk_img.SetDirection(direction)
+    return sitk_img
+
+
+def get_spacing_origin_direction_to_sitk(affine):
+    """
+    Get spacing from a SimpleITK image.
+    """
+    spacing = tuple(np.linalg.norm(affine[:3, i]) for i in range(3))
+    return spacing
 
 def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits: Union[torch.Tensor, np.ndarray],
                                                                 plans_manager: PlansManager,
@@ -81,6 +147,7 @@ def convert_predicted_logits_to_segmentation_with_correct_shape(predicted_logits
                                             current_spacing,
                                             [properties_dict['spacing'][i] for i in plans_manager.transpose_forward])
         postprocess_resample_time = time() - t0
+        logit_to_seg_time = 0
 
 
 
@@ -182,14 +249,14 @@ class SimplePredictor(nnUNetPredictor):
     def preprocess(self, image, props):
         preprocessor = self.configuration_manager.preprocessor_class(verbose=False)
         image = torch.from_numpy(image).to(dtype=torch.float32, memory_format=torch.contiguous_format).to(self.device)
-        data, resample_time = preprocessor.run_case_npy(image,
+        data, cropping_time, normalize_time, preprocess_resample_time = preprocessor.run_case_npy(image,
                                                   None,
                                                   props,
                                                   self.plans_manager,
                                                   self.configuration_manager,
                                                   self.dataset_json)
         #data = torch.from_numpy(data).to(dtype=torch.float32, memory_format=torch.contiguous_format)
-        return data, resample_time
+        return data, cropping_time, normalize_time, preprocess_resample_time
 
     def _internal_predict_sliding_window_return_logits(self,
                                                        data: torch.Tensor,
@@ -248,8 +315,7 @@ class SimplePredictor(nnUNetPredictor):
     
 
     def inference(self, image, properties_dict, use_softmax):
-        image, resample_time = self.preprocess(image, properties_dict)
-
+        image, cropping_time, normalize_time, preprocess_resample_time = self.preprocess(image, properties_dict)
 
         with torch.no_grad():
             assert isinstance(image, torch.Tensor)
@@ -264,9 +330,10 @@ class SimplePredictor(nnUNetPredictor):
                                                            None)
 
                 slicers = self._internal_get_sliding_window_slicers(data.shape[1:])
-
+                network_inference_t0 = time()
                 predicted_logits = self._internal_predict_sliding_window_return_logits(data, slicers,
                                             self.perform_everything_on_device)
+                network_inference_time = time() - network_inference_t0
                 print(f'predicted_logits shape: {predicted_logits.shape}')
                 empty_cache(self.device) # Start time for inference time calculation
                 predicted_logits = predicted_logits[(slice(None), *slicer_revert_padding[1:])]
@@ -283,7 +350,7 @@ class SimplePredictor(nnUNetPredictor):
                 print(f'Logit to seg time:: {logit_to_seg_time:.4f}')
                 print(f'Postprocessing resampling time: {postprocess_resample_time:.6f}')
 
-        return segmentation,resample_time, logit_to_seg_time, postprocess_resample_time
+        return segmentation, cropping_time, normalize_time, preprocess_resample_time, network_inference_time, logit_to_seg_time, postprocess_resample_time
 
 if __name__ == "__main__":
     def parse_arguments():
@@ -297,6 +364,7 @@ if __name__ == "__main__":
         parser.add_argument('--trt', action='store_true', help='Using TensorRT')
         parser.add_argument('--onnx_trt', action='store_true', help='Using TensorRT')
         parser.add_argument('--run_engine_trt', action='store_true', help='Using TensorRT')
+        parser.add_argument('--output_name', type=str, default=None, help='Custom name for the output .nii.gz file (optional)')
 
         return parser.parse_args()
 
@@ -321,219 +389,131 @@ if __name__ == "__main__":
     input_folder = args.input_path
     output_folder = args.output_path
     os.makedirs(output_folder, exist_ok=True)
-    files = glob.glob(os.path.join(input_folder, '*'))
+    all_files = sorted(glob.glob(os.path.join(input_folder, '*.nii.gz'), recursive=True))
+
+    t1_counter = defaultdict(int)
+    files = []
+
+    for file in all_files:
+        # case_name = get_case_name(file, t1_counter)
+        case_name = os.path.basename(file)
+        output_file = os.path.join(output_folder, case_name)
+
+        needs_prediction = True
+        if os.path.exists(output_file):
+            try:
+                _ = sitk.ReadImage(output_file)
+                needs_prediction = False
+            except Exception as e:
+                print(f"⚠️ {case_name} is corrupted or unreadable: {e}", flush=True)
+
+        if needs_prediction:
+            files.append((file, case_name))
+
+    print(f"🔎 Found {len(files)} T1 images that still need predictions.", flush=True)
+
 
     prediction_results = []
 
-    if args.onnx_trt:
-        model = predictor.network
-        model.cuda()
-        model.eval()
-        input_shape = (1, 1, 64, 256, 256)
-        # prediction.shape (14, 64, 256, 256)
-        input_tensor = torch.randn(input_shape).to("cuda")
 
-        # onnx_program = torch.onnx.dynamo_export(model, input_tensor)
-        # if "onnx_models" not in os.listdir():
-        #     os.makedirs("onnx_models")
-        # onnx_program.save("onnx_models/fast_unet.onnx")
+    for file, case_name in tqdm(files):
 
-        onnx_file_path = "onnx_models/fast_unet_fp32.onnx"
-        if "onnx_models" not in os.listdir():
-            os.makedirs("onnx_models")
-        torch.onnx.export(
-            model,
-            input_tensor,
-            onnx_file_path,
-            input_names=['input'],
-            output_names=['output'],
-            opset_version=16,
-            export_params=True,
-            keep_initializers_as_inputs=True,
-        )
+        nii = nib.load(file)
+        image_affine = nii.affine
+        image_ornt = nio.aff2axcodes(nii.affine)
+        desired_ornt = ('L', 'I', 'A')
+        
+        # Obtain the image orientation and desired orientation (LIA) with nibable.orientations
+        to_reorient = check_orientation(image_ornt, desired_ornt)
 
-        print(f"ONNX model exported to {onnx_file_path}")
+        if to_reorient:
+            # Reorient the image
+            reoriented_data, new_affine = reorient_image(nii, image_ornt, desired_ornt)
+            data_for_sitk = np.transpose(reoriented_data, (2, 1, 0)) # shape [Z, Y, X]
 
-        import numpy as np
-
-        # Example numpy file for single-input ONNX
-        calib_data = np.random.randn(1, 1, 64, 256, 256)
-        calib_data = calib_data.astype(np.float32)
-        np.save("calib_data.npy", calib_data)
-
-        # Example numpy file for single/multi-input ONNX
-        # Dict key should match the input names of ONNX
-        # calib_data = {
-        #     "input_name": np.random.randn(*shape),
-        #     "input_name2": np.random.randn(*shape2),
-        # }
-        # np.savez("/workspace/calib_data.npz", calib_data)
-
-        import sys
-
-        sys.path.insert(0, './TensorRT-Model-Optimizer')
-
-        import modelopt.onnx.quantization as moq
-        import numpy as np
-
-        calibration_data_path = 'calib_data.npy'
-        # onnx_path = "vit_base_patch16_224.onnx"
-        #
-        calibration_data = np.load(calibration_data_path)
-
-        # moq.quantize(
-        #     onnx_path="onnx_models/fast_unet.onnx",
-        #     calibration_data=calibration_data,
-        #     output_path="onnx_models/quant_fast_unet.onnx",
-        #     quantize_mode="int8",
-        #     # high_precision_dtype="float16",
-        # )
-
-        moq.quantize(
-            onnx_path="onnx_models/fast_unet_fp32.onnx",
-            calibration_data=calibration_data,
-            calibration_method='max',
-            output_path="onnx_models/quant_fast_unet_int8.onnx",
-            quantize_mode="int8",
-            high_precision_dtype="float32",
-        )
-
-        # ! / usr / src / tensorrt / bin / trtexec - -onnx = onnx_models / quant_fast_unet.onnx - -saveEngine = onnx_models / quant_fast_unet.engine - -best
-        # ! / usr / src / tensorrt / bin / trtexec - -onnx = onnx_models / quant_fast_unet.onnx - -saveEngine = onnx_models / quant_fast_unet_fp16.engine - -fp16
-
-    if args.run_engine_trt:
-        import sys
-
-        sys.path.insert(0, './TensorRT-Model-Optimizer')
-        from modelopt.torch._deploy._runtime import RuntimeRegistry
-        from modelopt.torch._deploy.device_model import DeviceModel
-        from modelopt.torch._deploy.utils import OnnxBytes
-
-        # Configure deployment
-        deployment = {
-            "runtime": "TRT",
-            "version": "10.3",
-            # "precision": 'int8',
-            "precision": 'fp32',
-        }
-
-
-        # Create an ONNX bytes object
-        onnx_bytes = OnnxBytes('onnx_models/quant_fast_unet_int8.onnx').to_bytes()
-
-        # Get the runtime client
-        client = RuntimeRegistry.get(deployment)
-
-        # Compile the TRT model
-        print("Compiling the TensorRT engine. This may take a few minutes...")
-        compiled_model = client.ir_to_compiled(onnx_bytes)
-        print("Compilation completed.")
-
-        # Print size of the compiled model
-        engine_size = len(compiled_model)
-        print(f"Size of the TensorRT engine: {engine_size / (1024 ** 2):.2f} MB")
-
-        # Create the device model
-        device_model = DeviceModel(client, compiled_model, metadata={})
-        print(f"Inference latency reported by device_model: {device_model.get_latency()} ms")
-
-        # device_model.eval()
-        predictor.network = device_model
-
-        for file in tqdm(files):
-            image, props = SimpleITKIO().read_images([file])
-            t0 = time()
-            seg, resample_time, logit_to_seg_time, postprocess_resample_time = predictor.inference(image, props, args.use_softmax)
-            elapsed_time = time() - t0
-            print(f'total: {time() - t0}')
-            sitk_img = sitk.GetImageFromArray(seg)
-            sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
-            sitk_img.SetOrigin(props['sitk_stuff']['origin'])
-            sitk_img.SetDirection(props['sitk_stuff']['direction'])
-            case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
-            sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
-
-            result = OrderedDict()
-            result["Filename"] = case_name
-            result["Prediction Time (seconds)"] = elapsed_time
-            result["Preprocess Resampling time (seconds)"] = resample_time
-            result["Logit to segmentation time (seconds)"] = logit_to_seg_time
-            result["Postprocessing Resampling time (seconds)"] = postprocess_resample_time
-            prediction_results.append(result)
-
-        exit(0)
-
-    if args.trt:
-        import torch_tensorrt as torchtrt
-        from modelopt.torch.quantization.utils import export_torch_mode
-        # it becomes slow in this version
-        model = predictor.network
-        model.cuda()
-        model.eval()
-        input_shape = (1, 1, 64, 256, 256)
-        with torch.no_grad():
-            with export_torch_mode():
-                input_tensor = torch.randn(input_shape).to("cuda")
-                from torch.export._trace import _export
-
-                exp_program = _export(model, (input_tensor,))
-                enabled_precisions = {torch.half}
-                trt_model = torchtrt.dynamo.compile(
-                    exp_program,
-                    inputs=[input_tensor],
-                    enabled_precisions=enabled_precisions,
-                    min_block_size=1,
-                )
-                predictor.network = trt_model
-            for file in tqdm(files):
-                image, props = SimpleITKIO().read_images([file])
-                t0 = time()
-                seg, resample_time, logit_to_seg_time, postprocess_resample_time = predictor.inference(image, props, args.use_softmax)
-                elapsed_time = time() - t0
-                print(f'total prediction time: {time() - t0}')
-                sitk_img = sitk.GetImageFromArray(seg)
-                sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
-                sitk_img.SetOrigin(props['sitk_stuff']['origin'])
-                sitk_img.SetDirection(props['sitk_stuff']['direction'])
-                case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
-                sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
-
-                result = OrderedDict()
-                result["Filename"] = case_name
-                result["Prediction Time (seconds)"] = elapsed_time
-                result["Preprocess Resampling time (seconds)"] = resample_time
-                result["Logit to segmentation time (seconds)"] = logit_to_seg_time
-                result["Postprocessing Resampling time (seconds)"] = postprocess_resample_time
-                prediction_results.append(result)
-    else:
-        for file in tqdm(files):
-            image, props = SimpleITKIO().read_images([file])
-            t0 = time()
-            seg, resample_time, logit_to_seg_time, postprocess_resample_time = predictor.inference(image, props, args.use_softmax)
-            elapsed_time = time() - t0
-            print(f'total: {time() - t0:.4f}')
-            sitk_img = sitk.GetImageFromArray(seg)
-            sitk_img.SetSpacing(props['sitk_stuff']['spacing'])
-            sitk_img.SetOrigin(props['sitk_stuff']['origin'])
-            sitk_img.SetDirection(props['sitk_stuff']['direction'])
-            case_name = file.split('/')[-1].replace('_0000.nii.gz', '.nii.gz')
-            sitk.WriteImage(sitk_img, os.path.join(output_folder, f'{case_name}'))
+            # Convert to SimpleITK image
+            sitk_img = sitk.GetImageFromArray(data_for_sitk)
             
-            result = OrderedDict()
-            result["Filename"] = case_name
-            result["Prediction Time (seconds)"] = elapsed_time
-            result["Preprocess Resampling time (seconds)"] = resample_time
-            result["Logit to segmentation time (seconds)"] = logit_to_seg_time
-            result["Postprocessing Resampling time (seconds)"] = postprocess_resample_time
-            prediction_results.append(result)
+            # Set the new affine matrix
+            sitk_img = set_sitk_metadata_from_affine(sitk_img, new_affine)
+
+            props = {
+                'sitk_stuff': {
+                    'spacing': sitk_img.GetSpacing(),
+                    'origin': sitk_img.GetOrigin(),
+                    'direction': sitk_img.GetDirection()
+                },
+                'spacing': sitk_img.GetSpacing()
+            }
+
+            # Convert to numpy array
+            image = sitk.GetArrayFromImage(sitk_img)
+            image = np.expand_dims(image, axis=0) # shape [1, Z, Y, X]
+        else:
+            image, props = SimpleITKIO().read_images([file])
+        
+
+        # 🧠 Inference
+        t0 = time()
+        seg, cropping_time, normalize_time, preprocess_resample_time, network_inference_time, logit_to_seg_time, postprocess_resample_time = predictor.inference(image, props, args.use_softmax)
+        elapsed_time = time() - t0
+        print(f'total: {elapsed_time:.4f}')
+
+        if to_reorient:
+            # Tranpose the segmentation for nibabel
+            seg = np.transpose(seg, (2, 1, 0)) # shape [Z, Y, X] to [X, Y, Z]
+            # Reorient the segmentation back to the original orientation
+            reoriented_seg_data, seg_affine = reorient_seg(seg, image_affine, image_ornt, desired_ornt)
+
+            # Convert to SimpleITK image
+            seg_data_for_sitk = np.transpose(reoriented_seg_data, (2, 1, 0)) # shape from [X, Y, Z] to [Z, Y, X]
+            sitk_seg = sitk.GetImageFromArray(seg_data_for_sitk)
+            
+            # Set the new affine matrix
+            sitk_seg = set_sitk_metadata_from_affine(sitk_seg, seg_affine)
+
+        else:
+            sitk_seg = sitk.GetImageFromArray(seg)
+            sitk_seg.SetSpacing(props['sitk_stuff']['spacing'])
+            sitk_seg.SetOrigin(props['sitk_stuff']['origin'])
+            sitk_seg.SetDirection(props['sitk_stuff']['direction'])
+
+        print(f"Running on {file} → Saving as {case_name}")
+        sitk.WriteImage(sitk_seg, os.path.join(output_folder, f'{case_name}'))
+
+        # Log
+        result = OrderedDict()
+        result["Filename"] = case_name
+        result["Cropping Time (s)"] = cropping_time
+        result["Normalize Time (s)"] = normalize_time
+        result["Preprocess Resampling time (s)"] = preprocess_resample_time
+        result["Network inference (s)"] = network_inference_time
+        result["Logit to segmentation time (s)"] = logit_to_seg_time
+        result["Postprocessing Resampling time (s)"] = postprocess_resample_time
+        result["Total time (s)"] = elapsed_time
+        prediction_results.append(result)
+
 
     # Convert list of OrderedDicts to DataFrame
     results_df = pd.DataFrame(prediction_results)
 
-    # Save results to an Excel file
-    results_df.to_excel(output_folder+"/inference_times.xlsx", index=False, engine="openpyxl")
+    excel_path = os.path.join(output_folder, "inference_times.xlsx")
 
-    print(f"Prediction times saved to {output_folder}")
+    # Check if the file exists, append if it does
+    if os.path.exists(excel_path):
+        try:
+            existing_df = pd.read_excel(excel_path, engine="openpyxl")
+            combined_df = pd.concat([existing_df, results_df], ignore_index=True)
+        except Exception as e:
+            print(f"⚠️ Failed to read existing Excel file, creating new one instead: {e}")
+            combined_df = results_df
+    else:
+        combined_df = results_df
+
+    # Save the combined dataframe
+    combined_df.to_excel(excel_path, index=False, engine="openpyxl")
+
+    print(f"✅ Prediction times saved to {excel_path}")
 
 
 

@@ -32,17 +32,6 @@ import pandas as pd
 import nibabel as nib
 import nibabel.orientations as nio
 
-def get_case_name(file, t1_counter):
-    session_dir = os.path.dirname(file)
-    subject = os.path.basename(os.path.dirname(session_dir))
-    session = os.path.basename(session_dir)
-    subject_id = subject.replace("sub-", "")
-    session_id = session.replace("ses-", "")
-    index = t1_counter[(subject_id, session_id)]
-    case_name = f"sub_{subject_id}_{session_id}_{index}.nii.gz"
-    t1_counter[(subject_id, session_id)] += 1
-    return case_name
-
 def check_orientation(nii_ornt, desired_ornt):
     """
     Check if reorientation is needed
@@ -395,7 +384,6 @@ if __name__ == "__main__":
     files = []
 
     for file in all_files:
-        # case_name = get_case_name(file, t1_counter)
         case_name = os.path.basename(file)
         output_file = os.path.join(output_folder, case_name)
 

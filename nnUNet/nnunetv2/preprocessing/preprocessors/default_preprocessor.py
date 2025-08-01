@@ -62,8 +62,9 @@ class DefaultPreprocessor(object):
         shape_before_cropping = data.shape[1:]
         properties['shape_before_cropping'] = shape_before_cropping
         # this command will generate a segmentation. This is important because of the nonzero mask which we may need
-
+        cropping_t0 = time()
         data, seg, bbox = crop_to_nonzero(data, seg)
+        cropping_time = time() - cropping_t0
 
         properties['bbox_used_for_cropping'] = bbox
         # print(data.shape, seg.shape)
@@ -82,21 +83,23 @@ class DefaultPreprocessor(object):
         # normalization MUST happen before resampling or we get huge problems with resampled nonzero masks no
         # longer fitting the images perfectly!
 
+        normalize_t0 = time()
         data = self._normalize(data, seg, configuration_manager,
                                plans_manager.foreground_intensity_properties_per_channel)
 
+        normalize_time = time() - normalize_t0
         # print('current shape', data.shape[1:], 'current_spacing', original_spacing,
         #       '\ntarget shape', new_shape, 'target_spacing', target_spacing)
 
-        t0 =  time()
+        resample_t0 =  time()
 
         data = fast_resample_data_or_seg_to_shape(data, new_shape, original_spacing, target_spacing)
 
-        resample_time = time() - t0
+        preprocess_resample_time = time() - resample_t0
 
-        print(f"Resampling time for preprocessing: {resample_time:.6f}")
+        print(f"Resampling time for preprocessing: {preprocess_resample_time:.6f}")
 
-        return data, resample_time
+        return data, cropping_time, normalize_time, preprocess_resample_time
 
     def run_case(self, image_files: List[str], seg_file: Union[str, None], plans_manager: PlansManager,
                  configuration_manager: ConfigurationManager,
